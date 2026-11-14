@@ -1,0 +1,75 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  إعدادات الخطوط والألوان الخاصة بمتجر YUOP (الوضع الصباحي والوضع الليلي)
+  - العناوين الإنجليزية والبراند: Oswald
+  - النصوص العربية والواجهة: Cairo + Plus Jakarta Sans
+  - الأرقام والبيانات المحاسبية والتواريخ: IBM Plex Mono + tabular-nums
+*/
+@layer base {
+  :root {
+    --yuop-bg: #ffffff;
+    --yuop-surface: #f7f7f7;
+    --yuop-ink: #111111;
+    --yuop-muted: #5c5c58;
+    --yuop-border: #e5e5e3;
+    --yuop-accent: #111111;
+  }
+
+  .dark {
+    --yuop-bg: #0d0d0c;
+    --yuop-surface: #161614;
+    --yuop-ink: #f5f5f2;
+    --yuop-muted: #a8a8a0;
+    --yuop-border: #2a2a27;
+    --yuop-accent: #f5f5f2;
+  }
+
+  body {
+    font-family: 'Cairo', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: var(--yuop-bg);
+    color: var(--yuop-ink);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+
+  .font-display {
+    font-family: 'Oswald', 'Cairo', sans-serif;
+  }
+
+  .font-mono-tabular {
+    font-family: 'IBM Plex Mono', 'Cairo', monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes yuop-marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.yuop-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: yuop-marquee 26s linear infinite;
+}
+
+.yuop-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

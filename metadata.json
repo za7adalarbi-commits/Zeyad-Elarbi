@@ -1,0 +1,8 @@
+{
+  "name": "YUOP",
+  "description": "YUOP Streetwear — متجر ملابس ستريت وير مع لوحة تحكم متكاملة لإدارة الطلبات والمدفوعات والشحن وربط WhatsApp Cloud API",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
