@@ -209,34 +209,40 @@ export function WhatsAppApiPanel({ config, messages, onReload }: WhatsAppApiPane
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WHATSAPP_PHONE_NUMBER_ID</span>
               <div className="mt-1 font-mono-tabular font-bold">
-                {config.phone_number_id_configured ? config.phone_number_id_masked : 'غير مضبوط في .env'}
+                {config.phone_number_id_configured ? config.phone_number_id_masked : 'غير مضبوط في Secrets'}
               </div>
             </div>
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WHATSAPP_BUSINESS_ACCOUNT_ID</span>
               <div className="mt-1 font-mono-tabular font-bold">
-                {config.business_account_id_configured ? config.business_account_id_masked : 'غير مضبوط في .env'}
+                {config.business_account_id_configured ? config.business_account_id_masked : 'غير مضبوط في Secrets'}
               </div>
             </div>
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WHATSAPP_ACCESS_TOKEN</span>
               <div className="mt-1 font-bold">
-                {config.access_token_configured ? 'مضبوط بالخادم (محمي)' : 'غير مضبوط في .env'}
+                {config.access_token_configured ? 'مضبوط بالخادم (محمي)' : 'غير مضبوط في Secrets'}
               </div>
             </div>
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WHATSAPP_WEBHOOK_VERIFY_TOKEN</span>
               <div className="mt-1 font-bold">
-                {config.webhook_verify_token_configured ? 'مضبوط بالخادم' : 'غير مضبوط في .env'}
+                {config.webhook_verify_token_configured ? 'مضبوط بالخادم' : 'غير مضبوط في Secrets'}
               </div>
             </div>
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WHATSAPP_APP_SECRET (توقيع Webhook)</span>
               <div className="mt-1 font-bold">
-                {config.app_secret_configured ? 'مفعل ومؤمن' : 'غير مضبوط في .env'}
+                {config.app_secret_configured ? 'مفعل ومؤمن' : 'غير مضبوط في Secrets'}
               </div>
             </div>
             <div className="border border-[#E2E2DD] p-3 dark:border-[#2A2A27]">
+              <span className="text-[#5C5C58] dark:text-[#A8A8A0]">بريد الطلبات (HTTP Email API)</span>
+              <div className="mt-1 font-bold">
+                {config.email_provider_configured ? `${config.email_provider || 'مفعل'} (جاهز)` : 'غير مضبوط (اختياري)'}
+              </div>
+            </div>
+            <div className="border border-[#E2E2DD] p-3 sm:col-span-2 lg:col-span-3 dark:border-[#2A2A27]">
               <span className="text-[#5C5C58] dark:text-[#A8A8A0]">WEBHOOK_URL (للربط في Meta App)</span>
               <div className="mt-1 flex items-center justify-between gap-2">
                 <span className="truncate font-mono-tabular font-bold">{config.webhook_url}</span>
@@ -316,40 +322,40 @@ export function SetupDocsAndCostPanel() {
 
         <div className="mt-5 grid grid-cols-1 gap-6 md:grid-cols-2">
           <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
-            <h3 className="text-sm font-bold">1. إعداد WhatsApp Cloud API الرسمي (بدون وسطاء)</h3>
-            <ol className="mt-2 list-inside list-decimal space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
-              <li>أنشئ تطبيق Business من بوابة Meta for Developers وأضف منتج WhatsApp.</li>
-              <li>احصل على <strong>Phone Number ID</strong> و<strong>WhatsApp Business Account ID</strong> و<strong>Permanent System User Token</strong>.</li>
-              <li>أضف القيم في ملف <code className="font-mono-tabular">.env</code> أو إعدادات الاستضافة (Environment Variables).</li>
-              <li>التسعير: Meta تمنح المحادثات الواردة من العميل (Service conversations) مجانية، وتُحسب الرسائل التسويقية/الخدمية التي تبدأها الشركة حسب تعرفة الدولة (بدون أي اشتراك شهري لوسيط).</li>
-            </ol>
-          </div>
-
-          <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
-            <h3 className="text-sm font-bold">2. إعداد Webhook واستقبال الإيصالات تلقائيًا</h3>
-            <ol className="mt-2 list-inside list-decimal space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
-              <li>في Meta App &gt; WhatsApp &gt; Configuration أدخل رابط <code className="font-mono-tabular">https://YOUR_DOMAIN/api/webhooks/whatsapp</code>.</li>
-              <li>أدخل نفس قيمة <code className="font-mono-tabular">WHATSAPP_WEBHOOK_VERIFY_TOKEN</code> واشترك في حقل <code className="font-mono-tabular">messages</code>.</li>
-              <li>أضف <code className="font-mono-tabular">WHATSAPP_APP_SECRET</code> للتحقق الإلزامي من التوقيع الرقمي <code className="font-mono-tabular">X-Hub-Signature-256</code>.</li>
-              <li>عند إرسال العميل صورة إيصال عبر واتساب، يقوم الخادم بتنزيلها وحفظها في <code className="font-mono-tabular">uploads/receipts/</code> وربطها بآخر طلب معلق له تلقائيًا.</li>
-            </ol>
-          </div>
-
-          <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
-            <h3 className="text-sm font-bold">3. تخزين صور الإيصالات وقاعدة البيانات بأقل تكلفة</h3>
+            <h3 className="text-sm font-bold">1. البنية السحابية المجانية (Cloudflare Edge Stack)</h3>
             <ul className="mt-2 list-inside list-disc space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
-              <li>قاعدة البيانات: <strong>SQLite (node:sqlite)</strong> مدمجة في Node.js v22 بتكلفة 0$ وبدون سيرفر خارجي.</li>
-              <li>تخزين الإيصالات: حفظ محلي آمن في <code className="font-mono-tabular">UPLOADS_DIR</code> مع حماية الوصول عبر <code className="font-mono-tabular">/api/receipts/:filename</code> (للموظف المصرح له أو توكن الطلب فقط).</li>
-              <li>للنشر السحابي مع حاويات مؤقتة: وجّه <code className="font-mono-tabular">DATABASE_PATH</code> و<code className="font-mono-tabular">UPLOADS_DIR</code> إلى Persistent Volume أو Cloudflare R2 (10GB مجاني شهريًا).</li>
+              <li>الواجهة والخادم: <strong>Cloudflare Workers + Static Assets + Hono</strong> (100,000 طلب/يوم مجانًا في الخطة المجانية).</li>
+              <li>قاعدة البيانات: <strong>Cloudflare D1 (SQLite الموزعة)</strong> — 5 جيجابايت مجانية مع استعلامات ومعاملات <code className="font-mono-tabular">batch()</code> ذرية، ومطابقة محليًا عبر <code className="font-mono-tabular">node:sqlite</code>.</li>
+              <li>تخزين الإيصالات: <strong>Cloudflare R2</strong> (10 جيجابايت مجانية شهريًا بدون رسوم سحب Egress)، مع فحص Magic Bytes ورابط محمي <code className="font-mono-tabular">/api/receipts/:filename</code>.</li>
+              <li>النشر التلقائي: عبر <strong>GitHub Actions</strong> وملف <code className="font-mono-tabular">wrangler.jsonc</code> وتشفير الأسرار في <strong>Cloudflare Secrets</strong>.</li>
             </ul>
           </div>
 
           <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
-            <h3 className="text-sm font-bold">4. البريد الإلكتروني (Gmail SMTP) والمكتبات المستخدمة</h3>
+            <h3 className="text-sm font-bold">2. إعداد WhatsApp Cloud API الرسمي واستقبال الإيصالات</h3>
+            <ol className="mt-2 list-inside list-decimal space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
+              <li>أنشئ تطبيق Business من بوابة Meta for Developers وأدخل رابط <code className="font-mono-tabular">https://YOUR_WORKER_DOMAIN/api/webhooks/whatsapp</code>.</li>
+              <li>احفظ الأسرار عبر <code className="font-mono-tabular">wrangler secret put</code> (<code className="font-mono-tabular">WHATSAPP_ACCESS_TOKEN</code>، <code className="font-mono-tabular">WHATSAPP_APP_SECRET</code>، <code className="font-mono-tabular">WHATSAPP_WEBHOOK_VERIFY_TOKEN</code>).</li>
+              <li>التسعير الرسمي من Meta: محادثات الخدمة الواردة خلال نافذة الـ 24 ساعة مجانية، بينما القوالب الصادرة التي يبدؤها المتجر خارج نافذة الـ 24 ساعة تخضع لتسعيرة Meta لكل محادثة/قالب حسب الدولة (بدون اشتراك شهري لوسيط).</li>
+              <li>عند إرسال العميل صورة إيصال عبر واتساب، يجلبها Worker عبر <code className="font-mono-tabular">fetch</code> ويدقق البايتات ويحفظها مباشرة في R2.</li>
+            </ol>
+          </div>
+
+          <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
+            <h3 className="text-sm font-bold">3. البريد الإلكتروني المتوافق مع Workers (HTTP Email API)</h3>
             <ul className="mt-2 list-inside list-disc space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
-              <li>Gmail SMTP عبر مكتبة <code className="font-mono-tabular">nodemailer</code> مجاني حتى 500 إيميل/يوم باستخدام App Password.</li>
-              <li>المكتبات: Express 4، React 19، Tailwind CSS v4، Lucide Icons، و<code className="font-mono-tabular">node:sqlite</code> و<code className="font-mono-tabular">node:crypto</code> المدمجة.</li>
-              <li>لا توجد رسائل SMS مدفوعة؛ كل الإشعارات عبر WhatsApp Cloud API الرسمي + بريد Gmail اختياري.</li>
+              <li>نظرًا لعدم دعم بروتوكول SMTP التقليدي في بيئة Workers المجانية، تم استبدال <code className="font-mono-tabular">nodemailer</code> بخدمات HTTP API مجانية عبر <code className="font-mono-tabular">fetch()</code>.</li>
+              <li>يدعم النظام <strong>Resend</strong> (100 إيميل/يوم مجانًا، حتى 3,000 شهريًا) أو <strong>Brevo</strong> (300 إيميل/يوم مجانًا) عبر ضبط <code className="font-mono-tabular">RESEND_API_KEY</code> أو <code className="font-mono-tabular">BREVO_API_KEY</code> و<code className="font-mono-tabular">EMAIL_FROM</code>.</li>
+              <li>يتم تسجيل كل محاولة إرسال في جدول <code className="font-mono-tabular">email_logs</code> دون تعطيل إنشاء الطلب إذا كان البريد اختياريًا.</li>
+            </ul>
+          </div>
+
+          <div className="border border-[#E2E2DD] p-4 dark:border-[#2A2A27]">
+            <h3 className="text-sm font-bold">4. الأمان وتأسيس حساب المدير الأول</h3>
+            <ul className="mt-2 list-inside list-disc space-y-1.5 text-[#5C5C58] dark:text-[#A8A8A0]">
+              <li>تجزئة كلمات المرور عبر <strong>Web Crypto PBKDF2-SHA256</strong> مع توقيع جلسات HttpOnly بمفتاح <code className="font-mono-tabular">SESSION_SECRET</code>.</li>
+              <li>لا توجد أي حسابات أو كلمات مرور افتراضية في الإنتاج؛ عند تشغيل قاعدة بيانات جديدة يظهر نموذج تأسيس المدير الأعلى لمرة واحدة (محمي بـ <code className="font-mono-tabular">ADMIN_SETUP_TOKEN</code> اختياري).</li>
+              <li>حماية Rate Limiting في D1 على تسجيل الدخول والتأسيس، وحماية CSRF على مسارات التعديل الإدارية.</li>
             </ul>
           </div>
         </div>

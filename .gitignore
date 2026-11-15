@@ -3,7 +3,11 @@ dist
 data/
 uploads/
 .env
+.dev.vars
+.wrangler/
+.wrangler-dryrun/
 .playwright-cli/
+migrations/exported_data.sql
 *.db
 *.db-shm
 *.db-wal

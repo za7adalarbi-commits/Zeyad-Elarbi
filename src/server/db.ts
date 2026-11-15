@@ -287,11 +287,26 @@ export function createDatabase(
     );
 
     CREATE TABLE IF NOT EXISTS whatsapp_webhook_events (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      event_id TEXT NOT NULL UNIQUE,
+      event_id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
-      payload_json TEXT NOT NULL,
-      processed_at TEXT NOT NULL
+      received_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS auth_rate_limits (
+      rate_key TEXT PRIMARY KEY,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      window_start TEXT NOT NULL,
+      locked_until TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS email_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      recipient_email TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error_message TEXT,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS notification_templates (
@@ -373,6 +388,22 @@ export function createDatabase(
   ensureColumn('store_settings', 'default_theme', `default_theme TEXT NOT NULL DEFAULT 'light'`);
   ensureColumn('orders', 'discount_amount', `discount_amount REAL NOT NULL DEFAULT 0`);
   ensureColumn('orders', 'promo_code', `promo_code TEXT`);
+
+  // توحيد جدول whatsapp_webhook_events في قواعد البيانات المحلية القديمة
+  const webhookCols = db.prepare(`PRAGMA table_info(whatsapp_webhook_events)`).all() as Array<{ name: string }>;
+  if (webhookCols.some((c) => c.name === 'payload_json') && !webhookCols.some((c) => c.name === 'received_at')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS whatsapp_webhook_events_new (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        received_at TEXT NOT NULL
+      );
+      INSERT OR IGNORE INTO whatsapp_webhook_events_new (event_id, event_type, received_at)
+      SELECT event_id, event_type, processed_at FROM whatsapp_webhook_events;
+      DROP TABLE whatsapp_webhook_events;
+      ALTER TABLE whatsapp_webhook_events_new RENAME TO whatsapp_webhook_events;
+    `);
+  }
 
   seedInitialData(db, uploadsDir);
   return db;
@@ -675,9 +706,10 @@ function seedInitialData(db: DatabaseSync, uploadsDir: string) {
     }
   }
 
-  // 4. حسابات الموظفين الافتراضية لتجربة جميع مستويات الصلاحيات (RBAC)
+  // 4. حسابات الموظفين التجريبية — مفعلة فقط عند تحديد ALLOW_DEV_SEED=true في التطوير المحلي
+  const allowDevSeed = process.env.ALLOW_DEV_SEED === 'true';
   const staffCount = (db.prepare('SELECT COUNT(*) as c FROM staff_users').get() as { c: number }).c;
-  if (staffCount === 0) {
+  if (staffCount === 0 && allowDevSeed) {
     const insertStaff = db.prepare(`
       INSERT INTO staff_users (name, email, password_hash, role, custom_permissions, is_active, created_at)
       VALUES (?, ?, ?, ?, NULL, 1, ?)
@@ -688,9 +720,9 @@ function seedInitialData(db: DatabaseSync, uploadsDir: string) {
     insertStaff.run('نور طارق (دعم العملاء)', 'support@yuop.store', hashPassword('yuop2026'), 'Customer Support', now);
   }
 
-  // 5. بيانات طلبات أولية واقعية (تغطي مراجعة الدفع، الدفع عند الاستلام، والشحن)
+  // 5. بيانات طلبات تجريبية — مفعلة فقط عند تحديد ALLOW_DEV_SEED=true
   const ordersCount = (db.prepare('SELECT COUNT(*) as c FROM orders').get() as { c: number }).c;
-  if (ordersCount === 0) {
+  if (ordersCount === 0 && allowDevSeed) {
     // إنشاء صورة إيصال تجريبية محفوظة فعليًا على القرص لمراجعة الدفع
     const sampleReceiptName = 'sample_vodafone_receipt.svg';
     const sampleReceiptPath = path.join(uploadsDir, sampleReceiptName);

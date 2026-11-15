@@ -1,7 +1,8 @@
 /**
  * ============================================================================
- * اختبارات التكامل الشاملة لجميع السيناريوهات الـ 6 المطلوبة (القسم الحادي والعشرون)
- * يتم التشغيل على قاعدة بيانات SQLite في الذاكرة (:memory:) عبر node:test.
+ * اختبارات التكامل الشاملة لجميع السيناريوهات الـ 6 المطلوبة (Async D1 + R2 Service)
+ * يتم التشغيل على قاعدة بيانات SQLite في الذاكرة (:memory:) عبر node:test
+ * باستخدام محولات Node (createNodeSqliteDbClient & createFsReceiptStorage).
  * ============================================================================
  */
 import test from 'node:test';
@@ -10,8 +11,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createDatabase } from '../db.ts';
-import { OrderService, type StaffActor } from './orderService.ts';
-import type { WhatsAppTransport } from './whatsappService.ts';
+import { createFsReceiptStorage, createNodeSqliteDbClient } from '../nodeAdapters.ts';
+import { OrderService, type StaffActor } from '../../worker/services/orderService.ts';
+import type { WhatsAppTransport } from '../../worker/services/whatsappService.ts';
+import type { ReceiptStorage } from '../../worker/r2Storage.ts';
 
 const superAdmin: StaffActor = {
   id: 1,
@@ -40,7 +43,9 @@ const VALID_PNG_BASE64 =
 
 function setupTestEnv(shouldFailWhatsApp = false) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yuop-test-'));
-  const db = createDatabase(':memory:', tmpDir);
+  const sqliteDb = createDatabase(':memory:', tmpDir);
+  const db = createNodeSqliteDbClient(sqliteDb);
+  const storage = createFsReceiptStorage(tmpDir);
   const sentMessages: Array<{ to: string; body: string }> = [];
   let failFlag = shouldFailWhatsApp;
 
@@ -58,17 +63,20 @@ function setupTestEnv(shouldFailWhatsApp = false) {
     async testConnection() {
       return { ok: !failFlag };
     },
-    async downloadMedia(mediaId, uploadsDir) {
+    async downloadMediaToStorage(mediaId: string, targetStorage: ReceiptStorage) {
       const fName = `wa_${mediaId}.png`;
-      const fPath = path.join(uploadsDir, fName);
-      fs.writeFileSync(fPath, Buffer.from(VALID_PNG_BASE64.split(',')[1], 'base64'));
-      return { ok: true, filePath: fPath, fileName: fName };
+      const storageKey = `receipts/${fName}`;
+      const raw = Buffer.from(VALID_PNG_BASE64.split(',')[1], 'base64');
+      await targetStorage.put(storageKey, new Uint8Array(raw), 'image/png');
+      return { ok: true, filePath: storageKey, fileName: fName };
     },
   };
 
-  const service = new OrderService(db, mockWa, tmpDir);
+  const service = new OrderService(db, mockWa, storage, {});
   return {
+    sqliteDb,
     db,
+    storage,
     service,
     sentMessages,
     setFailWhatsApp: (val: boolean) => {
@@ -97,7 +105,7 @@ test('السيناريو 1 و 2: فودافون كاش وإنستا باي كا�
     assert.match(sentMessages[1].body, /01099887766/);
 
     // 2. إرسال صورة الإيصال
-    const afterReceipt = service.attachPaymentReceipt({
+    const afterReceipt = await service.attachPaymentReceipt({
       orderId: order.id,
       base64Data: VALID_PNG_BASE64,
       source: 'web',
@@ -125,7 +133,7 @@ test('السيناريو 1 و 2: فودافون كاش وإنستا باي كا�
       items: [{ product_id: 2, size: 'M', quantity: 1 }],
     });
     assert.equal(instaOrder.payment_method, 'InstaPay');
-    service.attachPaymentReceipt({ orderId: instaOrder.id, base64Data: VALID_PNG_BASE64, source: 'web' });
+    await service.attachPaymentReceipt({ orderId: instaOrder.id, base64Data: VALID_PNG_BASE64, source: 'web' });
     const instaConfirmed = await service.confirmPayment(instaOrder.id, paymentReviewer);
     assert.equal(instaConfirmed.payment_status, 'Paid');
     assert.equal(instaConfirmed.status, 'Confirmed');
@@ -146,7 +154,7 @@ test('السيناريو 3: رفض الدفع مع السبب وإعادة إر�
       items: [{ product_id: 1, size: 'M', quantity: 1 }],
     });
 
-    service.attachPaymentReceipt({ orderId: order.id, base64Data: VALID_PNG_BASE64, source: 'web' });
+    await service.attachPaymentReceipt({ orderId: order.id, base64Data: VALID_PNG_BASE64, source: 'web' });
 
     // رفض بدون سبب يجب أن يفشل
     await assert.rejects(() => service.rejectPayment(order.id, '', paymentReviewer), /سبب رفض/);
@@ -159,7 +167,7 @@ test('السيناريو 3: رفض الدفع مع السبب وإعادة إر�
     assert.match(sentMessages.at(-1)!.body, /سبب الرفض: صورة الإيصال غير واضحة/);
 
     // العميل يعيد إرسال إيصال واضح في نفس الطلب
-    const reuploaded = service.attachPaymentReceipt({
+    const reuploaded = await service.attachPaymentReceipt({
       orderId: order.id,
       base64Data: VALID_PNG_BASE64,
       source: 'web',
@@ -189,7 +197,7 @@ test('السيناريو 4 و 5: الدفع عند الاستلام + رحلة �
 
     // تأكيد الطلب COD (يبقى Unpaid)
     await service.updateOrderStatus({ orderId: order.id, newStatus: 'Confirmed', actor: superAdmin });
-    const afterConfirm = service.getOrderById(order.id)!;
+    const afterConfirm = (await service.getOrderById(order.id))!;
     assert.equal(afterConfirm.status, 'Confirmed');
     assert.equal(afterConfirm.payment_status, 'Unpaid');
 
@@ -216,7 +224,7 @@ test('السيناريو 4 و 5: الدفع عند الاستلام + رحلة �
     await service.updateOrderStatus({ orderId: order.id, newStatus: 'Delivered', actor: shippingManager });
 
     // تسجيل تحصيل المبلغ بعد التسليم
-    const collected = service.collectCodPayment(order.id, shippingManager);
+    const collected = await service.collectCodPayment(order.id, shippingManager);
     assert.equal(collected.payment_status, 'Paid');
     assert.equal(collected.payment.cod_collected_by, shippingManager.name);
   } finally {
@@ -257,7 +265,7 @@ test('السيناريو 6: فشل إرسال WhatsApp يحفظ تحديث ال�
     assert.equal(retried.status, 'Sent');
     assert.equal(retried.retry_count, 1);
 
-    const finalOrder = service.getOrderById(order.id)!;
+    const finalOrder = (await service.getOrderById(order.id))!;
     assert.equal(finalOrder.status_history.length, historyCountBeforeRetry);
   } finally {
     cleanup();
@@ -302,7 +310,7 @@ test('منع معالجة نفس حدث WhatsApp Webhook مرتين وربط ص�
     assert.equal(firstPass.processed, 1);
     assert.equal(firstPass.skippedDuplicates, 0);
 
-    const updatedOrder = service.getOrderById(order.id)!;
+    const updatedOrder = (await service.getOrderById(order.id))!;
     assert.equal(updatedOrder.status, 'Payment Review');
     assert.equal(updatedOrder.receipts.length, 1);
     assert.equal(updatedOrder.receipts[0].source, 'whatsapp');
@@ -311,16 +319,16 @@ test('منع معالجة نفس حدث WhatsApp Webhook مرتين وربط ص�
     const secondPass = await service.processWhatsAppWebhook(webhookPayload);
     assert.equal(secondPass.processed, 0);
     assert.equal(secondPass.skippedDuplicates, 1);
-    assert.equal(service.getOrderById(order.id)!.receipts.length, 1);
+    assert.equal((await service.getOrderById(order.id))!.receipts.length, 1);
   } finally {
     cleanup();
   }
 });
 
 test('تطبيق كود الخصم وتحديث عداد الاستخدام ودليل العملاء وتنبيهات المخزون', async () => {
-  const { db, service, cleanup } = setupTestEnv(false);
+  const { sqliteDb, service, cleanup } = setupTestEnv(false);
   try {
-    const promoCheck = service.validatePromoCode('YUOP10', 1450);
+    const promoCheck = await service.validatePromoCode('YUOP10', 1450);
     assert.equal(promoCheck.discount_amount, 145);
 
     const { order } = await service.createOrder({
@@ -338,13 +346,15 @@ test('تطبيق كود الخصم وتحديث عداد الاستخدام ود
     assert.equal(order.subtotal, 1450);
     assert.equal(order.total_amount, 1450 - 145 + 85);
 
-    const promoRow = db.prepare(`SELECT used_count FROM promo_codes WHERE code = 'YUOP10'`).get() as { used_count: number };
+    const promoRow = sqliteDb
+      .prepare(`SELECT used_count FROM promo_codes WHERE code = 'YUOP10'`)
+      .get() as { used_count: number };
     assert.equal(promoRow.used_count, 1);
 
-    const customers = service.listCustomers();
+    const customers = await service.listCustomers();
     assert.ok(customers.some((c) => c.name === 'فارس سامي' && c.orders_count === 1));
 
-    const alerts = service.getLowStockAlerts(5);
+    const alerts = await service.getLowStockAlerts(5);
     assert.ok(alerts.length > 0);
   } finally {
     cleanup();

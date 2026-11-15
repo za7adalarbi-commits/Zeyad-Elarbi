@@ -25,17 +25,66 @@ import type {
   WhatsAppMessageRecord,
 } from '../shared/types.ts';
 
+const STAFF_TOKEN_KEY = 'yuop_staff_token';
+let memoryStaffToken: string | null = null;
+let unauthorizedHandler: (() => void) | null = null;
+
+export function getAdminToken(): string | null {
+  try {
+    const stored = window.localStorage.getItem(STAFF_TOKEN_KEY);
+    if (stored) {
+      memoryStaffToken = stored;
+      return stored;
+    }
+  } catch {
+    // ignore storage errors in restricted contexts
+  }
+  return memoryStaffToken;
+}
+
+export function setAdminToken(token: string | null): void {
+  memoryStaffToken = token;
+  try {
+    if (token) {
+      window.localStorage.setItem(STAFF_TOKEN_KEY, token);
+    } else {
+      window.localStorage.removeItem(STAFF_TOKEN_KEY);
+    }
+  } catch {
+    // ignore storage errors in restricted contexts
+  }
+}
+
+export function onAdminUnauthorized(handler: (() => void) | null): () => void {
+  unauthorizedHandler = handler;
+  return () => {
+    if (unauthorizedHandler === handler) {
+      unauthorizedHandler = null;
+    }
+  };
+}
+
 async function apiRequest<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getAdminToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...((options?.headers as Record<string, string>) || {}),
+  };
+  if (token && !headers.Authorization && !headers.authorization) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options?.headers || {}),
-    },
     ...options,
+    headers,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
+    if (res.status === 401 && url.startsWith('/api/admin') && !url.startsWith('/api/admin/auth/login')) {
+      setAdminToken(null);
+      if (unauthorizedHandler) unauthorizedHandler();
+    }
     throw new Error((data as { error?: string }).error || `خطأ في الخادم (${res.status})`);
   }
   return data as T;
@@ -116,19 +165,56 @@ export interface AuthedStaffUser extends StaffUser {
   effective_permissions: Permission[];
 }
 
-export function loginAdmin(email: string, password: string) {
-  return apiRequest<{ token: string; user: AuthedStaffUser }>('/api/admin/auth/login', {
+export interface AdminSetupStatus {
+  setupRequired: boolean;
+  tokenRequired: boolean;
+}
+
+export function fetchAdminSetupStatus() {
+  return apiRequest<AdminSetupStatus>('/api/admin/auth/setup-status');
+}
+
+export async function setupFirstAdminApi(payload: {
+  name: string;
+  email: string;
+  password: string;
+  setup_token?: string;
+}) {
+  const res = await apiRequest<{ token: string; user: AuthedStaffUser }>('/api/admin/auth/setup', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (res.token) {
+    setAdminToken(res.token);
+  }
+  return res;
+}
+
+export async function loginAdmin(email: string, password: string) {
+  const res = await apiRequest<{ token: string; user: AuthedStaffUser }>('/api/admin/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email, password }),
   });
+  if (res.token) {
+    setAdminToken(res.token);
+  }
+  return res;
 }
 
-export function logoutAdmin() {
-  return apiRequest<{ ok: boolean }>('/api/admin/auth/logout', { method: 'POST' });
+export async function logoutAdmin() {
+  try {
+    return await apiRequest<{ ok: boolean }>('/api/admin/auth/logout', { method: 'POST' });
+  } finally {
+    setAdminToken(null);
+  }
 }
 
-export function fetchCurrentStaff() {
-  return apiRequest<{ user: AuthedStaffUser }>('/api/admin/auth/me');
+export async function fetchCurrentStaff() {
+  const res = await apiRequest<{ user: AuthedStaffUser | null }>('/api/admin/auth/me');
+  if (!res.user) {
+    setAdminToken(null);
+  }
+  return res;
 }
 
 export function fetchDashboardOverview() {
@@ -268,6 +354,8 @@ export interface WhatsAppConfigResponse {
   app_secret_configured: boolean;
   api_version: string;
   webhook_url: string;
+  email_provider_configured?: boolean;
+  email_provider?: string;
 }
 
 export function fetchWhatsAppConfigApi() {

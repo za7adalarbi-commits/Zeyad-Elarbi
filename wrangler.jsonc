@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yuop-streetwear",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2025-05-01",
+  "workers_dev": true,
+
+  // استضافة الواجهة المبنية via Vite مع تمرير جميع طلبات /api/* أولًا إلى Worker
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // قاعدة بيانات Cloudflare D1 المجانية
+  // بعد إنشاء القاعدة بالأمر: npx wrangler d1 create yuop-db
+  // استبدل YOUR_D1_DATABASE_ID بالمعرف الناتج
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "yuop-db",
+      "database_id": "YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  // حاوية Cloudflare R2 لتخزين صور إيصالات الدفع (10GB مجانًا شهريًا)
+  // أنشئ الحاوية بالأمر: npx wrangler r2 bucket create yuop-receipts
+  "r2_buckets": [
+    {
+      "binding": "RECEIPTS_BUCKET",
+      "bucket_name": "yuop-receipts"
+    }
+  ],
+
+  // متغيرات بيئة عامة غير سرية (الأسرار تُضاف فقط عبر wrangler secret put)
+  "vars": {
+    "ENVIRONMENT": "production",
+    "WHATSAPP_API_VERSION": "v21.0",
+    "EMAIL_FROM_NAME": "YUOP Streetwear"
+  }
+}

@@ -61,6 +61,7 @@ import {
   fetchAdminOrderDetail,
   fetchAdminOrders,
   fetchAdminProducts,
+  fetchAdminSetupStatus,
   fetchAuditLogsApi,
   fetchCurrentStaff,
   fetchCustomersApi,
@@ -74,6 +75,8 @@ import {
   fetchWhatsAppMessagesApi,
   loginAdmin,
   logoutAdmin,
+  onAdminUnauthorized,
+  setupFirstAdminApi,
   updateStaffApi,
   type AuthedStaffUser,
   type WhatsAppConfigResponse,
@@ -136,8 +139,12 @@ export function AdminDashboard({
 }: AdminDashboardProps) {
   const [staff, setStaff] = useState<AuthedStaffUser | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [loginEmail, setLoginEmail] = useState('admin@yuop.store');
-  const [loginPassword, setLoginPassword] = useState('yuop2026');
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupTokenRequired, setSetupTokenRequired] = useState(false);
+  const [setupForm, setSetupForm] = useState({ name: '', email: '', password: '', setup_token: '' });
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
@@ -162,6 +169,8 @@ export function AdminDashboard({
   const [staffList, setStaffList] = useState<StaffUser[]>([]);
   const [rolesList, setRolesList] = useState<StaffRole[]>([]);
   const [newStaff, setNewStaff] = useState({ name: '', email: '', password: '', role: 'Payment Reviewer' as StaffRole });
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   // فلاتر البحث المتقدم في الطلبات
   const [filters, setFilters] = useState({
@@ -175,10 +184,23 @@ export function AdminDashboard({
   });
 
   useEffect(() => {
-    fetchCurrentStaff()
-      .then((res) => setStaff(res.user))
-      .catch(() => setStaff(null))
+    Promise.all([
+      fetchCurrentStaff().catch(() => ({ user: null })),
+      fetchAdminSetupStatus().catch(() => ({ setupRequired: false, tokenRequired: false })),
+    ])
+      .then(([meRes, setupRes]) => {
+        setStaff(meRes.user);
+        setSetupRequired(Boolean(setupRes.setupRequired));
+        setSetupTokenRequired(Boolean(setupRes.tokenRequired));
+      })
       .finally(() => setAuthLoading(false));
+  }, []);
+
+  useEffect(() => {
+    return onAdminUnauthorized(() => {
+      setStaff(null);
+      setLoginError('انتهت صلاحية الجلسة. يرجى تسجيل الدخول بحساب الموظف مجددًا.');
+    });
   }, []);
 
   const hasPerm = useCallback(
@@ -252,6 +274,7 @@ export function AdminDashboard({
   const handleLogin = async (e: FormEvent) => {
     e.preventDefault();
     setLoginError(null);
+    setActionError(null);
     try {
       const res = await loginAdmin(loginEmail, loginPassword);
       setStaff(res.user);
@@ -261,21 +284,58 @@ export function AdminDashboard({
     }
   };
 
+  const handleFirstAdminSetup = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setActionError(null);
+    setSetupSubmitting(true);
+    try {
+      const res = await setupFirstAdminApi({
+        name: setupForm.name,
+        email: setupForm.email,
+        password: setupForm.password,
+        setup_token: setupTokenRequired ? setupForm.setup_token : undefined,
+      });
+      setSetupRequired(false);
+      setStaff(res.user);
+      setActiveTab('overview');
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : 'تعذر تأسيس حساب المدير الأول');
+    } finally {
+      setSetupSubmitting(false);
+    }
+  };
+
   const handleLogout = async () => {
-    await logoutAdmin();
-    setStaff(null);
+    try {
+      await logoutAdmin();
+    } finally {
+      setStaff(null);
+    }
   };
 
   const openOrder = async (orderId: number) => {
-    const res = await fetchAdminOrderDetail(orderId);
-    setSelectedOrder(res.order);
+    setActionError(null);
+    try {
+      const res = await fetchAdminOrderDetail(orderId);
+      setSelectedOrder(res.order);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'تعذر تحميل تفاصيل الطلب');
+    }
   };
 
   const handleCreateStaff = async (e: FormEvent) => {
     e.preventDefault();
-    await createStaffApi(newStaff);
-    setNewStaff({ name: '', email: '', password: '', role: 'Payment Reviewer' });
-    await loadTabData();
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      await createStaffApi(newStaff);
+      setNewStaff({ name: '', email: '', password: '', role: 'Payment Reviewer' });
+      setActionSuccess('تم إضافة الموظف بنجاح.');
+      await loadTabData();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'تعذر إضافة الموظف');
+    }
   };
 
   const handleExportOrdersCsv = () => {
@@ -358,67 +418,114 @@ export function AdminDashboard({
             </div>
           )}
 
-          <form onSubmit={handleLogin} className="mt-5 space-y-4">
-            <div>
-              <label htmlFor="adm-email" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
-                البريد الإلكتروني الوظيفي
-              </label>
-              <input
-                id="adm-email"
-                type="email"
-                required
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
-              />
-            </div>
-            <div>
-              <label htmlFor="adm-pass" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
-                كلمة المرور
-              </label>
-              <input
-                id="adm-pass"
-                type="password"
-                required
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
-              />
-            </div>
-            <button
-              type="submit"
-              className="h-11 w-full bg-[#111111] text-sm font-bold text-white hover:bg-[#2A2A28] dark:bg-[#F5F5F2] dark:text-[#111111] dark:hover:bg-[#E2E2DD]"
-            >
-              تسجيل الدخول للوحة التحكم
-            </button>
-          </form>
-
-          {/* حسابات تجريبية لاختبار الصلاحيات المختلفة */}
-          <div className="mt-6 border-t border-[#E2E2DD] pt-4 dark:border-[#2A2A27]">
-            <p className="text-[11px] font-semibold text-[#5C5C58] dark:text-[#A8A8A0]">
-              حسابات تجريبية لاختبار الأدوار (كلمة المرور: yuop2026):
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]">
-              {[
-                { label: 'Super Admin', email: 'admin@yuop.store' },
-                { label: 'Payment Reviewer', email: 'payments@yuop.store' },
-                { label: 'Shipping Manager', email: 'shipping@yuop.store' },
-                { label: 'Customer Support', email: 'support@yuop.store' },
-              ].map((acc) => (
-                <button
-                  key={acc.email}
-                  type="button"
-                  onClick={() => {
-                    setLoginEmail(acc.email);
-                    setLoginPassword('yuop2026');
-                  }}
-                  className="border border-[#E2E2DD] bg-[#F6F6F4] px-2.5 py-1.5 font-medium text-[#111111] hover:border-[#111111] dark:border-[#2A2A27] dark:bg-[#1E1E1B] dark:text-[#F5F5F2] dark:hover:border-[#F5F5F2]"
-                >
-                  {acc.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {setupRequired ? (
+            <form onSubmit={handleFirstAdminSetup} className="mt-5 space-y-4">
+              <div className="border border-emerald-300 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200">
+                <strong>تأسيس حساب المدير الأعلى الأول (Super Admin Setup):</strong> لا توجد حسابات مسجلة بعد. أنشئ حساب المدير الرئيسي لتأمين لوحة التحكم.
+              </div>
+              <div>
+                <label htmlFor="setup-name" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                  اسم المدير الكامل
+                </label>
+                <input
+                  id="setup-name"
+                  type="text"
+                  required
+                  minLength={2}
+                  value={setupForm.name}
+                  onChange={(e) => setSetupForm({ ...setupForm, name: e.target.value })}
+                  placeholder="مثال: أحمد منصور"
+                  className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                />
+              </div>
+              <div>
+                <label htmlFor="setup-email" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                  البريد الإلكتروني للمدير
+                </label>
+                <input
+                  id="setup-email"
+                  type="email"
+                  required
+                  value={setupForm.email}
+                  onChange={(e) => setSetupForm({ ...setupForm, email: e.target.value })}
+                  placeholder="admin@yourdomain.com"
+                  className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                />
+              </div>
+              <div>
+                <label htmlFor="setup-pass" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                  كلمة مرور قوية (8 أحرف على الأقل)
+                </label>
+                <input
+                  id="setup-pass"
+                  type="password"
+                  required
+                  minLength={8}
+                  value={setupForm.password}
+                  onChange={(e) => setSetupForm({ ...setupForm, password: e.target.value })}
+                  className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                />
+              </div>
+              {setupTokenRequired && (
+                <div>
+                  <label htmlFor="setup-token" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                    رمز التأسيس السري (ADMIN_SETUP_TOKEN)
+                  </label>
+                  <input
+                    id="setup-token"
+                    type="password"
+                    required
+                    value={setupForm.setup_token}
+                    onChange={(e) => setSetupForm({ ...setupForm, setup_token: e.target.value })}
+                    className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                  />
+                </div>
+              )}
+              <button
+                type="submit"
+                disabled={setupSubmitting}
+                className="h-11 w-full bg-[#111111] text-sm font-bold text-white hover:bg-[#2A2A28] disabled:opacity-60 dark:bg-[#F5F5F2] dark:text-[#111111] dark:hover:bg-[#E2E2DD]"
+              >
+                {setupSubmitting ? 'جاري تأسيس الحساب...' : 'إنشاء حساب المدير الأعلى والدخول'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleLogin} className="mt-5 space-y-4">
+              <div>
+                <label htmlFor="adm-email" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                  البريد الإلكتروني الوظيفي
+                </label>
+                <input
+                  id="adm-email"
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="staff@yuop.store"
+                  className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                />
+              </div>
+              <div>
+                <label htmlFor="adm-pass" className="block text-xs font-semibold text-[#111111] dark:text-[#F5F5F2]">
+                  كلمة المرور
+                </label>
+                <input
+                  id="adm-pass"
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  className="mt-1 h-11 w-full border border-[#E2E2DD] bg-white px-3 text-sm text-[#111111] focus:border-[#111111] focus:outline-none dark:border-[#2A2A27] dark:bg-[#0D0D0C] dark:text-[#F5F5F2] dark:focus:border-[#F5F5F2]"
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-11 w-full bg-[#111111] text-sm font-bold text-white hover:bg-[#2A2A28] dark:bg-[#F5F5F2] dark:text-[#111111] dark:hover:bg-[#E2E2DD]"
+              >
+                تسجيل الدخول للوحة التحكم
+              </button>
+            </form>
+          )}
 
           <button
             type="button"
@@ -575,6 +682,19 @@ export function AdminDashboard({
         )}
 
         <main className="flex-1 p-4 sm:p-6">
+          {actionError && (
+            <div className="mb-4 flex items-center justify-between border border-red-300 bg-red-50 px-4 py-3 text-xs font-semibold text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300" role="alert">
+              <span>{actionError}</span>
+              <button type="button" onClick={() => setActionError(null)} className="underline">إغلاق</button>
+            </div>
+          )}
+          {actionSuccess && (
+            <div className="mb-4 flex items-center justify-between border border-emerald-300 bg-emerald-50 px-4 py-3 text-xs font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300" role="status">
+              <span>{actionSuccess}</span>
+              <button type="button" onClick={() => setActionSuccess(null)} className="underline">إغلاق</button>
+            </div>
+          )}
+
           {/* 1. لوحة الإحصائيات الـ 12 + تنبيهات المخزون + آخر العمليات */}
           {activeTab === 'overview' && stats && (
             <div className="space-y-6">
@@ -1020,14 +1140,14 @@ export function AdminDashboard({
           {/* 9. إدارة الموظفين والصلاحيات RBAC */}
           {activeTab === 'staff' && (
             <div className="space-y-6">
-              <form onSubmit={handleCreateStaff} className="grid grid-cols-1 gap-3 border border-[#E2E2DD] bg-white p-5 text-xs sm:grid-cols-5 dark:border-[#2A2A27] dark:bg-[#161614]">
+              <form onSubmit={handleCreateStaff} className="grid grid-cols-1 gap-3 border border-[#E2E2DD] bg-white p-5 text-xs sm:grid-cols-12 dark:border-[#2A2A27] dark:bg-[#161614]">
                 <input
                   type="text"
                   required
                   placeholder="اسم الموظف"
                   value={newStaff.name}
                   onChange={(e) => setNewStaff({ ...newStaff, name: e.target.value })}
-                  className="h-9 border border-[#E2E2DD] bg-white px-2.5 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
+                  className="h-10 border border-[#E2E2DD] bg-white px-2.5 sm:col-span-2 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
                 />
                 <input
                   type="email"
@@ -1035,7 +1155,7 @@ export function AdminDashboard({
                   placeholder="البريد الإلكتروني"
                   value={newStaff.email}
                   onChange={(e) => setNewStaff({ ...newStaff, email: e.target.value })}
-                  className="h-9 border border-[#E2E2DD] bg-white px-2.5 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
+                  className="h-10 border border-[#E2E2DD] bg-white px-2.5 sm:col-span-3 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
                 />
                 <input
                   type="password"
@@ -1043,18 +1163,18 @@ export function AdminDashboard({
                   placeholder="كلمة المرور"
                   value={newStaff.password}
                   onChange={(e) => setNewStaff({ ...newStaff, password: e.target.value })}
-                  className="h-9 border border-[#E2E2DD] bg-white px-2.5 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
+                  className="h-10 border border-[#E2E2DD] bg-white px-2.5 sm:col-span-2 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
                 />
                 <select
                   value={newStaff.role}
                   onChange={(e) => setNewStaff({ ...newStaff, role: e.target.value as StaffRole })}
-                  className="h-9 border border-[#E2E2DD] bg-white px-2 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
+                  className="h-10 border border-[#E2E2DD] bg-white px-2.5 sm:col-span-3 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
                 >
                   {rolesList.map((r) => (
                     <option key={r} value={r}>{ROLE_LABELS[r]}</option>
                   ))}
                 </select>
-                <button type="submit" className="h-9 bg-[#111111] font-semibold text-white dark:bg-[#F5F5F2] dark:text-[#111111]">
+                <button type="submit" className="h-10 bg-[#111111] font-semibold text-white sm:col-span-2 dark:bg-[#F5F5F2] dark:text-[#111111]">
                   إضافة موظف
                 </button>
               </form>
@@ -1078,8 +1198,13 @@ export function AdminDashboard({
                           <select
                             value={u.role}
                             onChange={async (e) => {
-                              await updateStaffApi(u.id, { role: e.target.value as StaffRole });
-                              await loadTabData();
+                              setActionError(null);
+                              try {
+                                await updateStaffApi(u.id, { role: e.target.value as StaffRole });
+                                await loadTabData();
+                              } catch (err) {
+                                setActionError(err instanceof Error ? err.message : 'تعذر تحديث صلاحية الموظف');
+                              }
                             }}
                             className="h-8 border border-[#E2E2DD] bg-white px-2 dark:border-[#2A2A27] dark:bg-[#0D0D0C]"
                           >
@@ -1092,8 +1217,13 @@ export function AdminDashboard({
                           <button
                             type="button"
                             onClick={async () => {
-                              await updateStaffApi(u.id, { is_active: !u.is_active });
-                              await loadTabData();
+                              setActionError(null);
+                              try {
+                                await updateStaffApi(u.id, { is_active: !u.is_active });
+                                await loadTabData();
+                              } catch (err) {
+                                setActionError(err instanceof Error ? err.message : 'تعذر تغيير حالة الموظف');
+                              }
                             }}
                             className={`border px-2.5 py-1 text-[11px] font-semibold ${
                               u.is_active
